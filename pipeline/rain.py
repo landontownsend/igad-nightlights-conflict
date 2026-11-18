@@ -10,6 +10,7 @@ Writes one file per year, so a failed run keeps the years it finished:
 import argparse
 import gzip
 import shutil
+import time
 
 import geopandas as gpd
 import pandas as pd
@@ -33,8 +34,14 @@ def run(cfg, force=False):
         for month in range(1, 13):
             url = cfg["sources"]["chirps"]["url"].format(year=year, month=month)
             gz = download(url, folder / f"{year}{month:02d}.tif.gz")
+            time.sleep(1)                 # a short pause between files, to go easy on the server
             if gz is None:
-                print(f"   {year}-{month:02d}: not published, skipped")
+                # Only the last year can have months not yet published; a missing
+                # older file means the server is having problems, so stop and retry later
+                if year < last:
+                    raise RuntimeError(f"CHIRPS file for {year}-{month:02d} not found; "
+                                       "the server may be busy, so rerun the rain stage later")
+                print(f"   {year}-{month:02d}: not published yet, skipped")
                 continue
             tif = folder / f"{year}{month:02d}.tif"
             with gzip.open(gz, "rb") as src, open(tif, "wb") as dst:
