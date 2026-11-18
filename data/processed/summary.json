@@ -1,0 +1,44 @@
+{
+  "rows": 120252,
+  "localities": 911,
+  "localities_by_country": {
+    "KEN": 290,
+    "SDN": 189,
+    "UGA": 151,
+    "SOM": 118,
+    "SSD": 78,
+    "ETH": 74,
+    "DJI": 11
+  },
+  "months": 132,
+  "new_outbreaks": 143,
+  "new_outbreaks_by_country": {
+    "DJI": 0,
+    "ETH": 21,
+    "KEN": 0,
+    "SDN": 42,
+    "SOM": 33,
+    "SSD": 47,
+    "UGA": 0
+  },
+  "new_outbreaks_by_year": {
+    "2015": 11,
+    "2016": 8,
+    "2017": 10,
+    "2018": 14,
+    "2019": 7,
+    "2020": 14,
+    "2021": 10,
+    "2022": 14,
+    "2023": 25,
+    "2024": 14,
+    "2025": 16
+  },
+  "at_risk_rows": 104361,
+  "outbreak_rate_among_at_risk_rows": 0.00137,
+  "missing_share": {
+    "light_change_3m": 0.096,
+    "light_change_6m": 0.055,
+    "rain_anomaly": 1.0
+  }
+}
