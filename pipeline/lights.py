@@ -111,9 +111,18 @@ def process_month(cfg, localities, outline, month_start, token):
     try:
         paths = downloader.download(gdf=outline, product_id=Product(bm["product"]),
                                     date_range=[month_start], skip_if_exists=True)
-    except ValueError as e:               # raised when NASA is missing a tile for this month
-        print(f"   {month_start:%Y-%m}: skipped, tiles missing on the NASA server ({e})")
-        return pd.DataFrame()
+    except Exception as e:
+        # A rejected token affects every month, so stop right away with a clear message
+        if "token" in str(e).lower() or "401" in str(e) or "403" in str(e):
+            raise RuntimeError(
+                "NASA rejected the Earthdata token. Log in once at "
+                "https://ladsweb.modaps.eosdis.nasa.gov with your Earthdata account, then "
+                "generate a new token at https://urs.earthdata.nasa.gov and update the "
+                "NASA_EARTHDATA_TOKEN secret.") from e
+        if isinstance(e, ValueError):     # raised when NASA is missing a tile for this month
+            print(f"   {month_start:%Y-%m}: skipped, tiles missing on the NASA server ({e})")
+            return pd.DataFrame()
+        raise
     if not paths:
         print(f"   {month_start:%Y-%m}: no tiles available")
         return pd.DataFrame()
