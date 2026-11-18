@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       stages:
-        description: "Stages to run: all, or any of lights, conflict, rain, population"
+        description: "Stages to run: all, none (only build from saved results), or any of lights, conflict, rain, population"
         type: string
         default: all
       years:
@@ -127,9 +127,13 @@ jobs:
         with: {pattern: "interim-*", path: data/interim, merge-multiple: true}
       - name: Build the dataset
         id: build
+        # Builds when night lights, conflict, and population succeeded in this run
+        # or were not part of it (their saved results are then used). Rainfall is a
+        # control, so the dataset is built without it if its stage failed.
         if: >-
-          needs.lights.result == 'success' && needs.conflict.result == 'success' &&
-          needs.rain.result == 'success' && needs.population.result == 'success'
+          (needs.lights.result == 'success' || needs.lights.result == 'skipped') &&
+          (needs.conflict.result == 'success' || needs.conflict.result == 'skipped') &&
+          (needs.population.result == 'success' || needs.population.result == 'skipped')
         run: |
           python -m pipeline.build
           pytest -q
