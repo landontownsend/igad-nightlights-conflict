@@ -41,9 +41,9 @@ All settings, including every variable definition, are in `config.yaml`.
 
 ### Running it
 
-The data sources are large (the night-light tiles alone are tens of gigabytes), so the dataset is built by the **Build dataset** workflow on GitHub Actions: Actions tab, *Build dataset*, *Run workflow*. Each year of night lights runs as a separate job, and every stage saves its progress (night lights by month, rainfall by year) and commits it back to the branch, even when a job fails, so a rerun only redoes what is missing.
+The night-light tiles are tens of gigabytes, so the two large stages run in Google Colab, not on GitHub Actions: open [notebooks/process_lights_colab.ipynb](https://colab.research.google.com/github/landontownsend/igad-nightlights-conflict/blob/data-build/notebooks/process_lights_colab.ipynb), add a free [NASA Earthdata](https://urs.earthdata.nasa.gov) token as the Colab secret `NASA_EARTHDATA_TOKEN`, and click *Run all*. It saves each month to Google Drive, so a disconnect loses nothing, and it takes about two to three hours. Its results go in `data/interim/lights/` and `data/interim/rain/`.
 
-The workflow needs a free [NASA Earthdata](https://urs.earthdata.nasa.gov) token saved as the repository secret `NASA_EARTHDATA_TOKEN`.
+The other stages are small and run anywhere. The **Build dataset** workflow on GitHub Actions only builds the dataset from the saved results and runs the tests (about one minute).
 
 To run a stage locally (from the repository root):
 

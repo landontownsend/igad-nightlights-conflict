@@ -1,158 +1,35 @@
-# Builds the dataset on GitHub's computers, which can reach every data source.
-# Start it from the Actions tab ("Run workflow"). Each stage saves its result in
-# data/interim/ and commits it back to the branch it ran on, so a rerun only
-# redoes the stages that are missing (tick "force" to redo everything).
+# Builds the dataset from the results already saved in data/interim/ and commits it.
+# This job is small (about one minute). The large downloads (night lights and
+# rainfall) do not run on GitHub Actions: they run in the Colab notebook
+# notebooks/process_lights_colab.ipynb, and their results are committed to data/interim/.
 name: Build dataset
 
 on:
   workflow_dispatch:
-    inputs:
-      force:
-        description: "Rebuild every stage, even ones already saved"
-        type: boolean
-        default: false
-      stages:
-        description: "Stages to run: all, none (only build from saved results), or any of lights, conflict, rain, population"
-        type: string
-        default: all
-      years:
-        description: "Night-light years to run, as a list"
-        type: string
-        default: "[2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]"
 
 permissions:
   contents: write
 
-env:
-  FORCE: ${{ inputs.force && '--force' || '' }}
-
 jobs:
-  boundaries:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11", cache: pip}
       - run: pip install -r requirements.txt
-      - run: python -m pipeline.boundaries   # never forced here: locality IDs must stay stable
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: interim-boundaries, path: data/interim}
-
-  lights:
-    needs: boundaries
-    if: contains(inputs.stages, 'all') || contains(inputs.stages, 'lights')
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      max-parallel: 7
-      matrix:
-        year: ${{ fromJSON(inputs.years) }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: {name: interim-boundaries, path: data/interim}
-      - run: python -m pipeline.lights --year ${{ matrix.year }} $FORCE
-        env:
-          BLACKMARBLE_TOKEN: ${{ secrets.NASA_EARTHDATA_TOKEN }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: "interim-lights-${{ matrix.year }}", path: data/interim}
-
-  conflict:
-    needs: boundaries
-    if: contains(inputs.stages, 'all') || contains(inputs.stages, 'conflict')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: {name: interim-boundaries, path: data/interim}
-      - run: python -m pipeline.conflict $FORCE
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: interim-conflict, path: data/interim}
-
-  rain:
-    needs: boundaries
-    if: contains(inputs.stages, 'all') || contains(inputs.stages, 'rain')
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: {name: interim-boundaries, path: data/interim}
-      - run: python -m pipeline.rain $FORCE
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: interim-rain, path: data/interim}
-
-  population:
-    needs: boundaries
-    if: contains(inputs.stages, 'all') || contains(inputs.stages, 'population')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: {name: interim-boundaries, path: data/interim}
-      - run: python -m pipeline.population $FORCE
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: interim-population, path: data/interim}
-
-  # Saves whatever the stages produced, even if some failed, then builds the
-  # dataset if every stage succeeded.
-  save:
-    needs: [boundaries, lights, conflict, rain, population]
-    if: always() && needs.boundaries.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: {pattern: "interim-*", path: data/interim, merge-multiple: true}
-      - name: Build the dataset
-        id: build
-        # Builds when night lights, conflict, and population succeeded in this run
-        # or were not part of it (their saved results are then used). Rainfall is a
-        # control, so the dataset is built without it if its stage failed.
-        if: >-
-          (needs.lights.result == 'success' || needs.lights.result == 'skipped') &&
-          (needs.conflict.result == 'success' || needs.conflict.result == 'skipped') &&
-          (needs.population.result == 'success' || needs.population.result == 'skipped')
+      - name: Build the dataset and run the tests
         run: |
           python -m pipeline.build
           pytest -q
-      - name: Commit the results to this branch
+      - name: Commit the dataset to this branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898099+github-actions[bot]@users.noreply.github.com"
-          git add data/interim data/processed
+          git add data/processed
           if git diff --cached --quiet; then
             echo "Nothing new to commit"
           else
             git commit -m "Dataset build: run ${{ github.run_number }}"
-            # Another run may have saved results in the meantime. Rebase onto them,
-            # keeping the version already saved if both runs changed the same file
-            # (-X ours means "the branch's version" during a rebase), and retry a few times.
-            for attempt in 1 2 3 4 5; do
-              git pull --rebase -X ours origin "${{ github.ref_name }}" &&
-                git push origin "HEAD:${{ github.ref_name }}" && break
-              echo "Push attempt $attempt failed; retrying in 20 s"
-              sleep 20
-            done
+            git push
           fi

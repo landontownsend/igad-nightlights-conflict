@@ -168,8 +168,12 @@ def process_month(cfg, localities, outline, month_start, token):
 def run(cfg, year, force=False):
     folder_out = interim(cfg, "lights")
     folder_out.mkdir(parents=True, exist_ok=True)
-    todo = [m for m in range(1, 13)
-            if force or not (folder_out / f"lights_{year}_{m:02d}.csv").exists()]
+    def saved_already(m):
+        """True if the month was saved by an earlier run of this version (with lit totals)."""
+        path = folder_out / f"lights_{year}_{m:02d}.csv"
+        return path.exists() and "lit_sum" in pd.read_csv(path, nrows=0).columns
+
+    todo = [m for m in range(1, 13) if force or not saved_already(m)]
     if not todo:
         print(f"lights {year}: already built, skipping (use --force to rebuild)")
         return
