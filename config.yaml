@@ -42,12 +42,10 @@ sources:
     variable: NearNadir_Composite_Snow_Free   # radiance, nW/cm2/sr
     drop_quality_flags: [2, 255]   # 2 = filled in from past years, 255 = no data
     min_valid_share: 0.5           # a month counts only if half the locality has a clear reading
-    # Empty land is not perfectly dark in the satellite readings: it shows small random
-    # values (noise). Only pixels at or above this brightness count as lit, so the totals
-    # measure towns and villages rather than noise. The stricter threshold is kept to
-    # check that results do not depend on the choice.
+    # Pixels at or above this brightness count as lit (lit_sum). Black Marble already sets
+    # most unlit background to zero, so this changes the totals very little.
     lit_threshold: 0.5             # nW/cm2/sr
-    lit_threshold_strict: 2.0      # nW/cm2/sr
+    lit_threshold_strict: 2.0      # nW/cm2/sr, saved in lit2_sum for later checks
   ucdp:
     downloads_page: https://ucdp.uu.se/downloads/index.html
     max_location_precision: 3      # keep events placed at least to a second-level area
@@ -65,11 +63,11 @@ definitions:
   outbreak_deaths: 25          # battle deaths in a month that count as an outbreak
   peaceful_months: 12          # months with no battle deaths needed before an outbreak
   battle_violence_types: [1, 2]   # UCDP: 1 state-based, 2 non-state (3 = one-sided, not battles)
-  sudden_drop_share: 0.30      # a single-month fall of more than 30 percent
+  sudden_drop_share: 0.5       # sudden_drop = light under half its usual level (3-month median)
   usual_level_years: 3         # "usual level" = same calendar month, previous 3 years
   months_since_cap: 60         # months_since_violence stops counting at 60
-  min_lit_total: 10            # a locality's usual lit total must be at least this (about
-                               # five lit pixels) for percent changes to be calculated
+  light_constant: 10           # added to light before taking log ratios, so that tiny
+                               # changes in dark localities stay near zero
 
 # -----------------------------------------------------------------------------
 # File paths

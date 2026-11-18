@@ -106,7 +106,7 @@ def test_ucdp_links_pick_newest_ged_and_candidates():
 def tiny(tmp_path):
     """
     Localities A and B (country X) are neighbors; C (country Y) is on its own.
-    - A's lights are steady at 10, then fall to 5 from June 2023 on.
+    - A's lights are steady at 10, then fall to 3 from June 2023 on.
     - B has a battle with 30 deaths in December 2023 (a new outbreak) and 40 in January 2024.
     - C has one small one-sided attack in March 2020.
     """
@@ -124,7 +124,7 @@ def tiny(tmp_path):
         rows = []
         for lid in ["A", "B", "C"]:
             for month in range(1, 13):
-                light = 5.0 if (lid == "A" and (year, month) >= (2023, 6)) else 10.0
+                light = 3.0 if (lid == "A" and (year, month) >= (2023, 6)) else 10.0
                 rows.append({"locality_id": lid, "year": year, "month": month,
                              "ntl_sum": light * 100, "valid_px": 100, "land_px": 100, "num_sum": 600,
                              "lit_sum": light * 100, "lit_px": 100,
@@ -165,12 +165,21 @@ def test_outbreak_only_after_peace(tiny):
 
 
 def test_lights_change_uses_previous_months_only(tiny):
-    # A's lights halve from June 2023. In June the previous 3 months were normal.
+    # A's light total falls from 1,000 to 300 in June 2023. In June the previous 3 months were normal.
     assert row(tiny, "A", 2023, 6).light_change_3m == 0
-    # In September 2023, June to August were all at half the usual level
-    assert row(tiny, "A", 2023, 9).light_change_3m == -50
-    assert row(tiny, "A", 2023, 7).sudden_drop == 1   # the June fall is in the past 6 months
+    # In September 2023, June to August were all at 300: log of (300 + 10) / (1,000 + 10)
+    assert row(tiny, "A", 2023, 9).light_change_3m == pytest.approx(np.log(310 / 1010), abs=0.001)
+    assert row(tiny, "A", 2023, 7).sudden_drop == 0   # only one low month so far: median unchanged
+    assert row(tiny, "A", 2023, 8).sudden_drop == 1   # two of the last three months were low
     assert row(tiny, "A", 2023, 9).months_declining == 3
+    assert row(tiny, "B", 2023, 9).light_change_3m == 0
+
+
+def test_one_unusual_month_does_not_move_the_light_change(tmp_path):
+    light = np.full((1, 60), 100.0)
+    light[0, 50] = 100_000.0                          # a single fire or lightning month
+    recent = np.stack([build.lag(light, j) for j in range(1, 4)])
+    assert np.nanmedian(recent, axis=0)[0, 52] == 100
 
 
 def test_nearby_and_national_deaths(tiny):
@@ -190,7 +199,6 @@ def test_controls(tiny):
     assert row(tiny, "A", 2024, 5).rain_anomaly == 0             # rain equals the normal
     assert row(tiny, "A", 2024, 5).population == 1000            # 2020 figure reused
     assert row(tiny, "A", 2016, 1).prewar_light == 1000         # 100 pixels at 10
-    assert row(tiny, "A", 2023, 9).light_change_3m_strict == -50
     assert row(tiny, "A", 2016, 1).clear_nights == 6
 
 

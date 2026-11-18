@@ -37,8 +37,6 @@
   "at_risk_rows": 104361,
   "outbreak_rate_among_at_risk_rows": 0.00137,
   "missing_share": {
-    "light_change_3m": 0.096,
-    "light_change_6m": 0.055,
     "rain_anomaly": 1.0
   }
 }
