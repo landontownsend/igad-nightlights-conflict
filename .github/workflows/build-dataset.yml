@@ -142,6 +142,13 @@ jobs:
             echo "Nothing new to commit"
           else
             git commit -m "Dataset build: run ${{ github.run_number }}"
-            git pull --rebase origin "${{ github.ref_name }}"
-            git push origin "HEAD:${{ github.ref_name }}"
+            # Another run may have saved results in the meantime. Rebase onto them,
+            # keeping the version already saved if both runs changed the same file
+            # (-X ours means "the branch's version" during a rebase), and retry a few times.
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase -X ours origin "${{ github.ref_name }}" &&
+                git push origin "HEAD:${{ github.ref_name }}" && break
+              echo "Push attempt $attempt failed; retrying in 20 s"
+              sleep 20
+            done
           fi
