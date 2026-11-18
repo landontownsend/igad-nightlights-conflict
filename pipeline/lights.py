@@ -15,6 +15,9 @@ across tiles when a locality crosses a tile edge:
   valid_px   number of clear pixels
   land_px    number of pixels with any reading (the locality's size in pixels)
   num_sum    total number of nightly observations behind the clear pixels
+  lit_sum    total radiance of clear pixels at or above the lit threshold (0.5)
+  lit_px     number of those lit pixels
+  lit2_sum, lit2_px   the same with the stricter threshold (2.0)
 
 Needs a NASA Earthdata token in the BLACKMARBLE_TOKEN environment variable.
 
@@ -70,7 +73,7 @@ def to_raster(array, bounds):
     return da.rio.write_crs("EPSG:4326").rio.write_nodata(np.nan)
 
 
-def process_tile(path, localities, variable, drop_flags):
+def process_tile(path, localities, variable, drop_flags, lit=0.5, lit_strict=2.0):
     """Add up light, clear pixels, all pixels, and observations for each locality in one tile."""
     with h5py.File(path, "r") as f:
         fields = f[DATA_FIELDS]
@@ -94,6 +97,10 @@ def process_tile(path, localities, variable, drop_flags):
         "valid_px": np.where(clear, 1.0, np.nan),
         "land_px": np.where(has_reading, 1.0, np.nan),
         "num_sum": np.where(clear, observations, np.nan),
+        "lit_sum": np.where(clear & (radiance >= lit), radiance, np.nan),
+        "lit_px": np.where(clear & (radiance >= lit), 1.0, np.nan),
+        "lit2_sum": np.where(clear & (radiance >= lit_strict), radiance, np.nan),
+        "lit2_px": np.where(clear & (radiance >= lit_strict), 1.0, np.nan),
     }
     result = inside[["locality_id"]].reset_index(drop=True)
     for name, array in layers.items():
@@ -148,7 +155,8 @@ def process_month(cfg, localities, outline, month_start, token):
         print(f"   {month_start:%Y-%m}: no tiles available")
         return pd.DataFrame()
 
-    parts = [process_tile(p, localities, bm["variable"], bm["drop_quality_flags"]) for p in paths]
+    parts = [process_tile(p, localities, bm["variable"], bm["drop_quality_flags"],
+                          bm["lit_threshold"], bm["lit_threshold_strict"]) for p in paths]
     month = pd.concat(parts, ignore_index=True).groupby("locality_id", as_index=False).sum()
     month["year"], month["month"] = month_start.year, month_start.month
     for p in paths:                       # free the disk space before the next month
@@ -172,7 +180,8 @@ def run(cfg, year, force=False):
     localities = gpd.read_file(interim(cfg, "localities.gpkg"))
     # A simplified outline of all study countries, used only to choose which tiles to download
     outline = gpd.GeoDataFrame(geometry=[localities.union_all().simplify(0.05)], crs="EPSG:4326")
-    columns = ["locality_id", "year", "month", "ntl_sum", "valid_px", "land_px", "num_sum"]
+    columns = ["locality_id", "year", "month", "ntl_sum", "valid_px", "land_px", "num_sum",
+               "lit_sum", "lit_px", "lit2_sum", "lit2_px"]
     saved = 0
     for m in todo:
         month = process_month(cfg, localities, outline, datetime.date(year, m, 1), token)

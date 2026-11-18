@@ -12,7 +12,7 @@ This repository builds the dataset for that question: one row per locality per m
 |---|---|
 | Identifiers | `country`, `locality_id`, `locality_name`, `year`, `month` |
 | Outcome (DV) | `new_outbreak`, plus `at_risk` and `battle_deaths`, which it is built from |
-| Night-light predictors | `light_change_3m`, `light_change_6m`, `sudden_drop`, `months_declining` |
+| Night-light predictors | `light_change_3m`, `light_change_6m`, `sudden_drop`, `months_declining` (and `light_change_3m_strict`, a check) |
 | Baseline predictors | `months_since_violence`, `nearby_deaths_3m`, `national_deaths_3m` |
 | Controls | `population`, `prewar_light`, `rain_anomaly`, `clear_nights` |
 
@@ -61,6 +61,7 @@ pytest                      # tests on made-up data, no internet needed
 ## Decisions worth knowing
 
 - **Filled-in pixels are removed.** Black Marble's monthly product fills cloudy pixels with values from earlier years (quality flag 2). Those would hide the very declines this project looks for, so they are dropped, and a month counts only if at least half of a locality had a clear reading.
+- **Only lit pixels count.** Empty land shows faint random values in the satellite readings, and in dark rural localities that noise produced changes of thousands of percent. Light is therefore the total of pixels at 0.5 nW/cm²/sr or brighter, and percent changes are left missing where a locality has no measurable lights.
 - **Battle deaths exclude one-sided violence.** The outcome uses UCDP's state-based and non-state violence (types 1 and 2). One-sided violence against civilians still counts toward `months_since_violence`.
 - **New outbreaks only.** A month is an outbreak if it has at least 25 battle deaths and the previous 12 months had none. Rows that follow fighting are kept but marked `at_risk = 0`, and the models use only `at_risk = 1` rows.
 - **Population after 2020** reuses WorldPop's 2020 estimate, the last year of its consistent series.

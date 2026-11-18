@@ -49,6 +49,32 @@ def test_process_tile_drops_filled_pixels(tmp_path):
     assert out.loc["east", "ntl_sum"] == pytest.approx(2.0 * pixels)
     assert out.loc["west", "valid_px"] == 0
     assert out.loc["west", "land_px"] == pytest.approx(pixels)
+    # 2.0 is above both lit thresholds (0.5 and 2.0), so every clear pixel counts as lit
+    assert out.loc["east", "lit_px"] == pytest.approx(pixels)
+    assert out.loc["east", "lit2_sum"] == pytest.approx(2.0 * pixels)
+
+
+def test_process_tile_ignores_faint_noise(tmp_path):
+    path = tmp_path / "VNP46A3.A2023001.h21v07.002.h5"
+    n = 2400
+    radiance = np.full((n, n), 3, dtype="uint16")       # 0.3: faint noise on empty land
+    radiance[1440:1680, 1440:1680] = 50                 # 5.0: a lit town
+    with h5py.File(path, "w") as f:
+        f.attrs["HorizontalTileNumber"] = np.bytes_(b"21")
+        f.attrs["VerticalTileNumber"] = np.bytes_(b"07")
+        g = f.create_group(DATA_FIELDS)
+        rad = g.create_dataset("NearNadir_Composite_Snow_Free", data=radiance)
+        rad.attrs["scale_factor"] = 0.1
+        g.create_dataset("NearNadir_Composite_Snow_Free_Quality", data=np.zeros((n, n), dtype="uint8"))
+        g.create_dataset("NearNadir_Composite_Snow_Free_Num", data=np.full((n, n), 4, dtype="uint16"))
+    # Rows 1440 to 1680 are 14 to 13 N; columns 1440 to 1680 are 36 to 37 E
+    localities = gpd.GeoDataFrame({"locality_id": ["town", "empty"]},
+                                  geometry=[box(36, 13, 37, 14), box(31, 12, 32, 13)], crs="EPSG:4326")
+    out = process_tile(path, localities, "NearNadir_Composite_Snow_Free", [2, 255]).set_index("locality_id")
+    pixels = 240 * 240
+    assert out.loc["town", "lit_sum"] == pytest.approx(5.0 * pixels)
+    assert np.nan_to_num(out.loc["empty", "lit_sum"]) == 0      # noise alone is not light
+    assert out.loc["empty", "ntl_sum"] == pytest.approx(0.3 * pixels)
 
 
 # -----------------------------------------------------------------------------
@@ -100,7 +126,9 @@ def tiny(tmp_path):
             for month in range(1, 13):
                 light = 5.0 if (lid == "A" and (year, month) >= (2023, 6)) else 10.0
                 rows.append({"locality_id": lid, "year": year, "month": month,
-                             "ntl_sum": light * 100, "valid_px": 100, "land_px": 100, "num_sum": 600})
+                             "ntl_sum": light * 100, "valid_px": 100, "land_px": 100, "num_sum": 600,
+                             "lit_sum": light * 100, "lit_px": 100,
+                             "lit2_sum": light * 100, "lit2_px": 100})
         pd.DataFrame(rows).to_csv(tmp_path / f"interim/lights/lights_{year}_all.csv", index=False)
 
     pd.DataFrame([
@@ -161,7 +189,8 @@ def test_months_since_violence_counts_all_types_and_caps(tiny):
 def test_controls(tiny):
     assert row(tiny, "A", 2024, 5).rain_anomaly == 0             # rain equals the normal
     assert row(tiny, "A", 2024, 5).population == 1000            # 2020 figure reused
-    assert row(tiny, "A", 2016, 1).prewar_light == 10
+    assert row(tiny, "A", 2016, 1).prewar_light == 1000         # 100 pixels at 10
+    assert row(tiny, "A", 2023, 9).light_change_3m_strict == -50
     assert row(tiny, "A", 2016, 1).clear_nights == 6
 
 

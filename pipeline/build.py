@@ -74,45 +74,62 @@ def light_features(cfg, ids, months):
     d = cfg["definitions"]
     files = sorted(glob.glob(str(interim(cfg, "lights")) + "/lights_*.csv"))
     lights = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    if "lit_sum" not in lights or lights["lit_sum"].isna().all():
+        raise RuntimeError("The saved night-light files come from an older version without lit "
+                           "totals; rerun the lights stage with force to rebuild them")
     lights["month_index"] = month_index(lights["year"], lights["month"])
 
-    # Average radiance of the clear pixels; missing if under half the locality was clear
+    # Total light from lit pixels, scaled up to the whole locality when clouds hid part of
+    # it (lit total x all pixels / clear pixels); missing if under half the locality was clear
     share = lights["valid_px"] / lights["land_px"]
     ok = (lights["valid_px"] > 0) & (share >= cfg["sources"]["black_marble"]["min_valid_share"])
-    lights["light"] = np.where(ok, lights["ntl_sum"] / lights["valid_px"], np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        lights["light"] = np.where(ok, lights["lit_sum"] / share, np.nan)
+        lights["light_strict"] = np.where(ok, lights["lit2_sum"] / share, np.nan)
     lights["clear_nights"] = np.where(lights["valid_px"] > 0,
                                       lights["num_sum"] / lights["valid_px"], np.nan)
     light = to_grid(lights, "light", ids, months)
     clear = to_grid(lights, "clear_nights", ids, months)
 
-    # "Usual level": the same calendar month in the previous 3 years (at least 2 of them)
-    past = np.stack([lag(light, 12 * y) for y in range(1, d["usual_level_years"] + 1)])
-    n_past = np.sum(~np.isnan(past), axis=0)
-    with np.errstate(invalid="ignore"):
-        usual = np.where(n_past >= 2, np.nanmean(past, axis=0), np.nan)
+    def usual_level(values):
+        """The same calendar month in the previous 3 years (at least 2 of them)."""
+        past = np.stack([lag(values, 12 * y) for y in range(1, d["usual_level_years"] + 1)])
+        n_past = np.sum(~np.isnan(past), axis=0)
+        with np.errstate(invalid="ignore"):
+            return np.where(n_past >= 2, np.nanmean(past, axis=0), np.nan)
 
-    # Percent change over the previous 3 and 6 months, compared with the usual level
-    both = ~np.isnan(light) & ~np.isnan(usual)
-    features = {}
-    for k, min_months in [(3, 2), (6, 4)]:
-        actual, n = window_sum(np.where(both, light, np.nan), k)
+    def percent_change(values, usual, k, min_months):
+        """Percent change over the previous k months, compared with the usual level."""
+        both = ~np.isnan(values) & ~np.isnan(usual)
+        actual, n = window_sum(np.where(both, values, np.nan), k)
         expected, _ = window_sum(np.where(both, usual, np.nan), k)
         with np.errstate(divide="ignore", invalid="ignore"):
             change = (actual / expected - 1) * 100
-        valid = (n >= min_months) & (expected > d["light_floor"] * k)
-        features[f"light_change_{k}m"] = np.where(valid, change, np.nan)
+        valid = (n >= min_months) & (expected >= d["min_lit_total"] * n)
+        return np.where(valid, change, np.nan)
+
+    usual = usual_level(light)
+    both = ~np.isnan(light) & ~np.isnan(usual)
+    features = {}
+    for k, min_months in [(3, 2), (6, 4)]:
+        features[f"light_change_{k}m"] = percent_change(light, usual, k, min_months)
+    # The same 3-month change with the stricter lit threshold, to check that results do
+    # not depend on where the threshold is set
+    strict = to_grid(lights, "light_strict", ids, months)
+    features["light_change_3m_strict"] = percent_change(strict, usual_level(strict), 3, 2)
 
     # Sudden drop: light fell by more than 30 percent from one month to the next,
     # in any of the previous 6 months
     previous = lag(light)
     with np.errstate(invalid="ignore"):
-        dropped = (light < (1 - d["sudden_drop_share"]) * previous) & (previous > d["light_floor"])
+        dropped = (light < (1 - d["sudden_drop_share"]) * previous) & (previous >= d["min_lit_total"])
     drops, _ = window_sum(np.where(dropped, 1.0, 0.0), 6)
     features["sudden_drop"] = np.where(np.isnan(drops), np.nan, (drops > 0).astype(float))
 
-    # Consecutive months below the usual level, up to last month (a missing month ends the run)
+    # Consecutive months below the usual level, up to last month (a missing month ends the
+    # run). Counted only where the usual level is high enough to measure a decline.
     with np.errstate(invalid="ignore"):
-        below = (light < usual) & both
+        below = (light < usual) & both & (usual >= d["min_lit_total"])
     streak = np.zeros(light.shape)
     for t in range(1, light.shape[1]):
         streak[:, t] = (streak[:, t - 1] + 1) * below[:, t]
@@ -120,7 +137,7 @@ def light_features(cfg, ids, months):
 
     features["clear_nights"] = lag(clear)
 
-    # Average light before the study period, which separates cities from rural areas
+    # Average monthly lit total before the study period, which separates cities from rural areas
     first, last = cfg["years"]["prewar_light"]
     cols = [i for i, m in enumerate(months) if first <= m // 12 <= last]
     with np.errstate(invalid="ignore"):
@@ -246,6 +263,9 @@ def check(df, n_localities, n_months):
         problems.append("months_since_violence outside 1 to 60")
     if (df["prewar_light"] < 0).any():
         problems.append("negative light")
+    for col in ["light_change_3m", "light_change_6m", "light_change_3m_strict"]:
+        if (df[col] < -100).any():
+            problems.append(f"{col} below -100 percent")
     if problems:
         raise ValueError("Dataset checks failed: " + "; ".join(problems))
 
@@ -261,6 +281,7 @@ COLUMN_ORDER = [
     "new_outbreak", "at_risk", "battle_deaths",
     # night-light predictors
     "light_change_3m", "light_change_6m", "sudden_drop", "months_declining",
+    "light_change_3m_strict",
     # baseline predictors
     "months_since_violence", "nearby_deaths_3m", "national_deaths_3m",
     # controls
@@ -298,10 +319,10 @@ def run(cfg):
                     "national_deaths_3m", "population"]
     for col in integer_cols:
         df[col] = df[col].round().astype("Int64")
-    for col in ["light_change_3m", "light_change_6m", "rain_anomaly"]:
+    for col in ["light_change_3m", "light_change_6m", "light_change_3m_strict", "rain_anomaly"]:
         df[col] = df[col].round(1)
-    for col in ["prewar_light", "clear_nights"]:
-        df[col] = df[col].round(3)
+    df["prewar_light"] = df["prewar_light"].round(1)
+    df["clear_nights"] = df["clear_nights"].round(3)
     df = df[COLUMN_ORDER].sort_values(["country", "locality_id", "year", "month"]).reset_index(drop=True)
 
     check(df, len(ids), len(study))
