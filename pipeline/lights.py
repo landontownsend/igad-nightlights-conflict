@@ -25,6 +25,7 @@ Writes one file per month, so a failed run keeps the months it finished:
 import argparse
 import datetime
 import os
+import time
 from pathlib import Path
 
 import geopandas as gpd
@@ -101,6 +102,39 @@ def process_tile(path, localities, variable, drop_flags):
     return result
 
 
+TOKEN_MESSAGE = ("NASA rejected the Earthdata token. Log in once at "
+                 "https://ladsweb.modaps.eosdis.nasa.gov with your Earthdata account, then "
+                 "generate a new token at https://urs.earthdata.nasa.gov and update the "
+                 "NASA_EARTHDATA_TOKEN secret.")
+
+
+def download_month(downloader, outline, product, month_start):
+    """
+    Download one month of tiles. Returns the file paths, or None if the month
+    has to be skipped. The NASA archive sometimes answers "not found" (404) for
+    files it does have, so a 404 is tried three times before the month is skipped.
+    """
+    for attempt in range(1, 4):
+        try:
+            return downloader.download(gdf=outline, product_id=product,
+                                       date_range=[month_start], skip_if_exists=True)
+        except Exception as e:
+            message = str(e)
+            if "token" in message.lower() or "401" in message or "403" in message:
+                raise RuntimeError(TOKEN_MESSAGE) from e   # affects every month: stop now
+            if "404" in message:
+                if attempt < 3:
+                    print(f"   {month_start:%Y-%m}: NASA answered 404, retrying in {60 * attempt} s")
+                    time.sleep(60 * attempt)
+                    continue
+                print(f"   {month_start:%Y-%m}: skipped, NASA answered 404 three times")
+                return None
+            if isinstance(e, ValueError):   # blackmarblepy: a tile is missing for this month
+                print(f"   {month_start:%Y-%m}: skipped, tiles missing on the NASA server")
+                return None
+            raise
+
+
 def process_month(cfg, localities, outline, month_start, token):
     """Download one month of tiles, add them up per locality, then delete the tiles."""
     from blackmarble.download import BlackMarbleDownloader
@@ -109,24 +143,7 @@ def process_month(cfg, localities, outline, month_start, token):
     bm = cfg["sources"]["black_marble"]
     folder = downloads(cfg, f"blackmarble/{month_start:%Y%m}")
     downloader = BlackMarbleDownloader(token, folder)
-    try:
-        paths = downloader.download(gdf=outline, product_id=Product(bm["product"]),
-                                    date_range=[month_start], skip_if_exists=True)
-    except Exception as e:
-        # A rejected token affects every month, so stop right away with a clear message
-        if "token" in str(e).lower() or "401" in str(e) or "403" in str(e):
-            raise RuntimeError(
-                "NASA rejected the Earthdata token. Log in once at "
-                "https://ladsweb.modaps.eosdis.nasa.gov with your Earthdata account, then "
-                "generate a new token at https://urs.earthdata.nasa.gov and update the "
-                "NASA_EARTHDATA_TOKEN secret.") from e
-        if "404" in str(e):               # NASA has no files at all for this month (e.g. January 2012)
-            print(f"   {month_start:%Y-%m}: skipped, not available on the NASA server")
-            return pd.DataFrame()
-        if isinstance(e, ValueError):     # raised when NASA is missing a tile for this month
-            print(f"   {month_start:%Y-%m}: skipped, tiles missing on the NASA server ({e})")
-            return pd.DataFrame()
-        raise
+    paths = download_month(downloader, outline, Product(bm["product"]), month_start)
     if not paths:
         print(f"   {month_start:%Y-%m}: no tiles available")
         return pd.DataFrame()

@@ -163,3 +163,46 @@ def test_controls(tiny):
     assert row(tiny, "A", 2024, 5).population == 1000            # 2020 figure reused
     assert row(tiny, "A", 2016, 1).prewar_light == 10
     assert row(tiny, "A", 2016, 1).clear_nights == 6
+
+
+# -----------------------------------------------------------------------------
+# Lights download: what happens when NASA answers with an error
+# -----------------------------------------------------------------------------
+
+class FakeDownloader:
+    """Raises the given errors in order, then returns a list of files."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.calls = 0
+
+    def download(self, **kwargs):
+        self.calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return ["tile.h5"]
+
+
+def test_download_retries_404_then_succeeds(monkeypatch):
+    import datetime
+    from pipeline import lights
+    monkeypatch.setattr(lights.time, "sleep", lambda s: None)
+    fake = FakeDownloader([Exception("Client error '404 Not Found'")])
+    assert lights.download_month(fake, None, "VNP46A3", datetime.date(2021, 10, 1)) == ["tile.h5"]
+    assert fake.calls == 2
+
+
+def test_download_skips_month_after_three_404s(monkeypatch):
+    import datetime
+    from pipeline import lights
+    monkeypatch.setattr(lights.time, "sleep", lambda s: None)
+    fake = FakeDownloader([Exception("404")] * 3)
+    assert lights.download_month(fake, None, "VNP46A3", datetime.date(2012, 1, 1)) is None
+
+
+def test_download_stops_on_rejected_token():
+    import datetime
+    from pipeline import lights
+    fake = FakeDownloader([ValueError("invalid or expired NASA Earthdata token")])
+    with pytest.raises(RuntimeError, match="rejected the Earthdata token"):
+        lights.download_month(fake, None, "VNP46A3", datetime.date(2018, 1, 1))
