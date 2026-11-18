@@ -31,9 +31,9 @@ WorldPop population ────────────────────
 | Stage | Script | Output in `data/interim/` |
 |---|---|---|
 | Boundaries | `pipeline/boundaries.py` | `localities.gpkg`, `localities.csv`, `neighbors.csv` |
-| Night lights | `pipeline/lights.py` | `lights/lights_<year>.csv` (one file per year, 2012 to 2025) |
+| Night lights | `pipeline/lights.py` | `lights/lights_<year>_<month>.csv` (one file per month, 2012 to 2025) |
 | Conflict | `pipeline/conflict.py` | `conflict_events.csv`, `conflict_sources.json` |
-| Rainfall | `pipeline/rain.py` | `rain_monthly.csv` |
+| Rainfall | `pipeline/rain.py` | `rain/rain_<year>.csv` (1991 to 2025) |
 | Population | `pipeline/population.py` | `population.csv` |
 | Build | `pipeline/build.py` | `data/processed/igad_locality_month.csv` (and `.parquet`, `summary.json`) |
 
@@ -41,9 +41,9 @@ All settings, including every variable definition, are in `config.yaml`.
 
 ### Running it
 
-The data sources are large (the night-light tiles alone are tens of gigabytes), so the dataset is built by the **Build dataset** workflow on GitHub Actions: Actions tab, *Build dataset*, *Run workflow*. Each year of night lights runs as a separate job, and each stage commits its result back to the branch, so a rerun only redoes what is missing.
+The night-light tiles are tens of gigabytes, so the two large stages run in Google Colab, not on GitHub Actions: open [notebooks/process_lights_colab.ipynb](https://colab.research.google.com/github/landontownsend/igad-nightlights-conflict/blob/data-build/notebooks/process_lights_colab.ipynb), add a free [NASA Earthdata](https://urs.earthdata.nasa.gov) token as the Colab secret `NASA_EARTHDATA_TOKEN`, and click *Run all*. It saves each month to Google Drive, so a disconnect loses nothing, and it takes about two to three hours. Its results go in `data/interim/lights/` and `data/interim/rain/`.
 
-The workflow needs a free [NASA Earthdata](https://urs.earthdata.nasa.gov) token saved as the repository secret `NASA_EARTHDATA_TOKEN`.
+The other stages are small and run anywhere. The **Build dataset** workflow on GitHub Actions only builds the dataset from the saved results and runs the tests (about one minute).
 
 To run a stage locally (from the repository root):
 
@@ -61,6 +61,7 @@ pytest                      # tests on made-up data, no internet needed
 ## Decisions worth knowing
 
 - **Filled-in pixels are removed.** Black Marble's monthly product fills cloudy pixels with values from earlier years (quality flag 2). Those would hide the very declines this project looks for, so they are dropped, and a month counts only if at least half of a locality had a clear reading.
+- **Light changes use medians and log ratios.** In rural East Africa, fires, lightning and thin cloud can light up a dark locality for a single month. A plain percent change turned those months into changes of thousands of percent, so the light measures compare medians (which one unusual month cannot move) and use a log ratio with a small constant, which keeps small changes in dark localities close to zero.
 - **Battle deaths exclude one-sided violence.** The outcome uses UCDP's state-based and non-state violence (types 1 and 2). One-sided violence against civilians still counts toward `months_since_violence`.
 - **New outbreaks only.** A month is an outbreak if it has at least 25 battle deaths and the previous 12 months had none. Rows that follow fighting are kept but marked `at_risk = 0`, and the models use only `at_risk = 1` rows.
 - **Population after 2020** reuses WorldPop's 2020 estimate, the last year of its consistent series.
@@ -68,7 +69,7 @@ pytest                      # tests on made-up data, no internet needed
 ## Not yet included
 
 - Displacement (IOM Displacement Tracking Matrix). Its survey rounds differ by country and are not monthly, so it will be added once a consistent rule for carrying values forward is settled.
-- Removing light from fires and gas flares (NASA FIRMS). The quality filtering above removes the largest distortions; this is a planned refinement.
+- Removing light from fires and gas flares (NASA FIRMS). The medians above limit the effect of a single month of fire light; removing the fires themselves is a planned refinement.
 
 ## Data sources
 

@@ -74,45 +74,55 @@ def light_features(cfg, ids, months):
     d = cfg["definitions"]
     files = sorted(glob.glob(str(interim(cfg, "lights")) + "/lights_*.csv"))
     lights = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    if "lit_sum" not in lights or lights["lit_sum"].isna().all():
+        raise RuntimeError("The saved night-light files come from an older version without lit "
+                           "totals; rerun the lights stage with force to rebuild them")
     lights["month_index"] = month_index(lights["year"], lights["month"])
 
-    # Average radiance of the clear pixels; missing if under half the locality was clear
+    # Total light from lit pixels, scaled up to the whole locality when clouds hid part of
+    # it (lit total x all pixels / clear pixels); missing if under half the locality was clear
     share = lights["valid_px"] / lights["land_px"]
     ok = (lights["valid_px"] > 0) & (share >= cfg["sources"]["black_marble"]["min_valid_share"])
-    lights["light"] = np.where(ok, lights["ntl_sum"] / lights["valid_px"], np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        lights["light"] = np.where(ok, lights["lit_sum"] / share, np.nan)
     lights["clear_nights"] = np.where(lights["valid_px"] > 0,
                                       lights["num_sum"] / lights["valid_px"], np.nan)
     light = to_grid(lights, "light", ids, months)
     clear = to_grid(lights, "clear_nights", ids, months)
 
-    # "Usual level": the same calendar month in the previous 3 years (at least 2 of them)
-    past = np.stack([lag(light, 12 * y) for y in range(1, d["usual_level_years"] + 1)])
-    n_past = np.sum(~np.isnan(past), axis=0)
-    with np.errstate(invalid="ignore"):
-        usual = np.where(n_past >= 2, np.nanmean(past, axis=0), np.nan)
+    # Black Marble readings in rural East Africa jump from month to month (fires, lightning
+    # and thin cloud can light up a dark area for one month). So the measures compare
+    # MEDIANS, which one unusual month cannot move, and use a log ratio with a small
+    # constant added, so that a change from 1 to 20 in a dark locality is not "+1,900%".
+    c = d["light_constant"]
+    with np.errstate(all="ignore"):
+        usual = np.nanmedian(np.stack([lag(light, 12 * y)
+                                       for y in range(1, d["usual_level_years"] + 1)]), axis=0)
+    usual = np.where(np.sum([~np.isnan(lag(light, 12 * y)) for y in range(1, 4)], axis=0) >= 2,
+                     usual, np.nan)
 
-    # Percent change over the previous 3 and 6 months, compared with the usual level
-    both = ~np.isnan(light) & ~np.isnan(usual)
     features = {}
-    for k, min_months in [(3, 2), (6, 4)]:
-        actual, n = window_sum(np.where(both, light, np.nan), k)
-        expected, _ = window_sum(np.where(both, usual, np.nan), k)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            change = (actual / expected - 1) * 100
-        valid = (n >= min_months) & (expected > d["light_floor"] * k)
-        features[f"light_change_{k}m"] = np.where(valid, change, np.nan)
+    for k in (3, 6):
+        # The previous k months, and the same k months in each of the previous 3 years
+        recent = np.stack([lag(light, j) for j in range(1, k + 1)])
+        past = np.stack([lag(light, j + 12 * y) for y in range(1, d["usual_level_years"] + 1)
+                         for j in range(1, k + 1)])
+        with np.errstate(all="ignore"):
+            change = np.log((np.nanmedian(recent, axis=0) + c) / (np.nanmedian(past, axis=0) + c))
+        enough = ((np.sum(~np.isnan(recent), axis=0) >= 2 * k // 3) &
+                  (np.sum(~np.isnan(past), axis=0) >= 2 * k))
+        features[f"light_change_{k}m"] = np.where(enough, change, np.nan)
 
-    # Sudden drop: light fell by more than 30 percent from one month to the next,
-    # in any of the previous 6 months
-    previous = lag(light)
+    # Sudden drop: in the previous 3 months, light was typically less than half its usual level
+    lc3 = features["light_change_3m"]
     with np.errstate(invalid="ignore"):
-        dropped = (light < (1 - d["sudden_drop_share"]) * previous) & (previous > d["light_floor"])
-    drops, _ = window_sum(np.where(dropped, 1.0, 0.0), 6)
-    features["sudden_drop"] = np.where(np.isnan(drops), np.nan, (drops > 0).astype(float))
+        features["sudden_drop"] = np.where(np.isnan(lc3), np.nan,
+                                           (lc3 < np.log(d["sudden_drop_share"])).astype(float))
 
-    # Consecutive months below the usual level, up to last month (a missing month ends the run)
+    # Consecutive months, up to last month, with light below its usual level for that
+    # calendar month (a missing month ends the run)
     with np.errstate(invalid="ignore"):
-        below = (light < usual) & both
+        below = (light < usual) & ~np.isnan(light) & ~np.isnan(usual) & (usual >= c)
     streak = np.zeros(light.shape)
     for t in range(1, light.shape[1]):
         streak[:, t] = (streak[:, t - 1] + 1) * below[:, t]
@@ -120,7 +130,7 @@ def light_features(cfg, ids, months):
 
     features["clear_nights"] = lag(clear)
 
-    # Average light before the study period, which separates cities from rural areas
+    # Average monthly lit total before the study period, which separates cities from rural areas
     first, last = cfg["years"]["prewar_light"]
     cols = [i for i, m in enumerate(months) if first <= m // 12 <= last]
     with np.errstate(invalid="ignore"):
@@ -190,7 +200,11 @@ def conflict_features(cfg, localities, neighbors, months):
 
 def rain_anomaly(cfg, ids, months):
     """Rainfall over the previous 3 months, as a percent above or below normal for those months."""
-    rain = pd.read_csv(interim(cfg, "rain_monthly.csv"))
+    files = sorted(glob.glob(str(interim(cfg, "rain")) + "/rain_*.csv"))
+    if not files:                         # rainfall not downloaded yet: leave the column empty
+        print("   no rainfall files yet: rain_anomaly will be empty")
+        return np.full((len(ids), len(months)), np.nan)
+    rain = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     rain["month_index"] = month_index(rain["year"], rain["month"])
     first = int(rain["month_index"].min())
     all_months = list(range(first, max(months) + 1))
@@ -242,6 +256,9 @@ def check(df, n_localities, n_months):
         problems.append("months_since_violence outside 1 to 60")
     if (df["prewar_light"] < 0).any():
         problems.append("negative light")
+    for col in ["light_change_3m", "light_change_6m"]:
+        if (df[col].abs() > 10).any():
+            problems.append(f"{col} outside the possible range")
     if problems:
         raise ValueError("Dataset checks failed: " + "; ".join(problems))
 
@@ -294,10 +311,11 @@ def run(cfg):
                     "national_deaths_3m", "population"]
     for col in integer_cols:
         df[col] = df[col].round().astype("Int64")
-    for col in ["light_change_3m", "light_change_6m", "rain_anomaly"]:
-        df[col] = df[col].round(1)
-    for col in ["prewar_light", "clear_nights"]:
+    for col in ["light_change_3m", "light_change_6m"]:
         df[col] = df[col].round(3)
+    df["rain_anomaly"] = df["rain_anomaly"].round(1)
+    df["prewar_light"] = df["prewar_light"].round(1)
+    df["clear_nights"] = df["clear_nights"].round(3)
     df = df[COLUMN_ORDER].sort_values(["country", "locality_id", "year", "month"]).reset_index(drop=True)
 
     check(df, len(ids), len(study))
@@ -324,5 +342,6 @@ def run(cfg):
 
 if __name__ == "__main__":
     argparse.ArgumentParser().parse_args()
-    warnings.filterwarnings("ignore", message="Mean of empty slice")   # all-missing rows are expected
+    warnings.filterwarnings("ignore", message="Mean of empty slice")
+    warnings.filterwarnings("ignore", message="All-NaN slice encountered")   # all-missing rows are expected
     run(load_config())
