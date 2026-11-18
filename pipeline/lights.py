@@ -120,6 +120,9 @@ def process_month(cfg, localities, outline, month_start, token):
                 "https://ladsweb.modaps.eosdis.nasa.gov with your Earthdata account, then "
                 "generate a new token at https://urs.earthdata.nasa.gov and update the "
                 "NASA_EARTHDATA_TOKEN secret.") from e
+        if "404" in str(e):               # NASA has no files at all for this month (e.g. January 2012)
+            print(f"   {month_start:%Y-%m}: skipped, not available on the NASA server")
+            return pd.DataFrame()
         if isinstance(e, ValueError):     # raised when NASA is missing a tile for this month
             print(f"   {month_start:%Y-%m}: skipped, tiles missing on the NASA server ({e})")
             return pd.DataFrame()
