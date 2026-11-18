@@ -190,7 +190,8 @@ def conflict_features(cfg, localities, neighbors, months):
 
 def rain_anomaly(cfg, ids, months):
     """Rainfall over the previous 3 months, as a percent above or below normal for those months."""
-    rain = pd.read_csv(interim(cfg, "rain_monthly.csv"))
+    files = sorted(glob.glob(str(interim(cfg, "rain")) + "/rain_*.csv"))
+    rain = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     rain["month_index"] = month_index(rain["year"], rain["month"])
     first = int(rain["month_index"].min())
     all_months = list(range(first, max(months) + 1))

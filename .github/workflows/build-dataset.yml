@@ -28,6 +28,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m pipeline.boundaries $FORCE
       - uses: actions/upload-artifact@v4
+        if: always()
         with: {name: interim-boundaries, path: data/interim}
 
   lights:
@@ -50,6 +51,7 @@ jobs:
         env:
           BLACKMARBLE_TOKEN: ${{ secrets.NASA_EARTHDATA_TOKEN }}
       - uses: actions/upload-artifact@v4
+        if: always()
         with: {name: "interim-lights-${{ matrix.year }}", path: data/interim}
 
   conflict:
@@ -64,6 +66,7 @@ jobs:
         with: {name: interim-boundaries, path: data/interim}
       - run: python -m pipeline.conflict $FORCE
       - uses: actions/upload-artifact@v4
+        if: always()
         with: {name: interim-conflict, path: data/interim}
 
   rain:
@@ -79,6 +82,7 @@ jobs:
         with: {name: interim-boundaries, path: data/interim}
       - run: python -m pipeline.rain $FORCE
       - uses: actions/upload-artifact@v4
+        if: always()
         with: {name: interim-rain, path: data/interim}
 
   population:
@@ -93,6 +97,7 @@ jobs:
         with: {name: interim-boundaries, path: data/interim}
       - run: python -m pipeline.population $FORCE
       - uses: actions/upload-artifact@v4
+        if: always()
         with: {name: interim-population, path: data/interim}
 
   # Saves whatever the stages produced, even if some failed, then builds the
@@ -125,5 +130,6 @@ jobs:
             echo "Nothing new to commit"
           else
             git commit -m "Dataset build: run ${{ github.run_number }}"
-            git push
+            git pull --rebase origin "${{ github.ref_name }}"
+            git push origin "HEAD:${{ github.ref_name }}"
           fi

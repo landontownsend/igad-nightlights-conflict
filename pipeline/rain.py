@@ -3,7 +3,8 @@ Stage 4: rainfall.
 Downloads CHIRPS monthly rainfall for Africa and averages it over each locality,
 from the start of the "normal" period (1991) to the end of the study period.
 
-Writes: data/interim/rain_monthly.csv  (locality_id, year, month, rain_mm)
+Writes one file per year, so a failed run keeps the years it finished:
+  data/interim/rain/rain_<year>.csv  (locality_id, year, month, rain_mm)
 """
 
 import argparse
@@ -18,17 +19,17 @@ from pipeline.common import download, downloads, interim, load_config
 
 
 def run(cfg, force=False):
-    out = interim(cfg, "rain_monthly.csv")
-    if out.exists() and not force:
-        print("rain: already built, skipping (use --force to rebuild)")
-        return
-
+    folder_out = interim(cfg, "rain")
+    folder_out.mkdir(parents=True, exist_ok=True)
     localities = gpd.read_file(interim(cfg, "localities.gpkg"))[["locality_id", "geometry"]]
     first = cfg["sources"]["chirps"]["normal_years"][0]
     last = cfg["years"]["end"]
     folder = downloads(cfg, "chirps")
-    parts = []
     for year in range(first, last + 1):
+        out = folder_out / f"rain_{year}.csv"
+        if out.exists() and not force:
+            continue                      # saved by an earlier run
+        parts = []
         for month in range(1, 13):
             url = cfg["sources"]["chirps"]["url"].format(year=year, month=month)
             gz = download(url, folder / f"{year}{month:02d}.tif.gz")
@@ -44,9 +45,10 @@ def run(cfg, force=False):
                                        "rain_mm": stats["mean"].round(2)}))
             gz.unlink()
             tif.unlink()
-        print(f"   {year} done")
-    pd.concat(parts, ignore_index=True).to_csv(out, index=False)
-    print(f"rain: {len(parts)} months saved")
+        if parts:
+            pd.concat(parts, ignore_index=True).to_csv(out, index=False)
+        print(f"   {year}: {len(parts)} months saved")
+    print("rain: done")
 
 
 if __name__ == "__main__":

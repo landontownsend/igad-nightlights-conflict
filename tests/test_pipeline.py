@@ -101,7 +101,7 @@ def tiny(tmp_path):
                 light = 5.0 if (lid == "A" and (year, month) >= (2023, 6)) else 10.0
                 rows.append({"locality_id": lid, "year": year, "month": month,
                              "ntl_sum": light * 100, "valid_px": 100, "land_px": 100, "num_sum": 600})
-        pd.DataFrame(rows).to_csv(tmp_path / f"interim/lights/lights_{year}.csv", index=False)
+        pd.DataFrame(rows).to_csv(tmp_path / f"interim/lights/lights_{year}_all.csv", index=False)
 
     pd.DataFrame([
         {"id": 1, "year": 2023, "month": 12, "type_of_violence": 1, "best": 30, "locality_id": "B"},
@@ -109,9 +109,11 @@ def tiny(tmp_path):
         {"id": 3, "year": 2020, "month": 3, "type_of_violence": 3, "best": 2, "locality_id": "C"},
     ]).to_csv(tmp_path / "interim/conflict_events.csv", index=False)
 
-    rain = [{"locality_id": lid, "year": y, "month": m, "rain_mm": 50.0}
-            for lid in "ABC" for y in range(1991, 2026) for m in range(1, 13)]
-    pd.DataFrame(rain).to_csv(tmp_path / "interim/rain_monthly.csv", index=False)
+    (tmp_path / "interim" / "rain").mkdir()
+    for y in range(1991, 2026):
+        rain = [{"locality_id": lid, "year": y, "month": m, "rain_mm": 50.0}
+                for lid in "ABC" for m in range(1, 13)]
+        pd.DataFrame(rain).to_csv(tmp_path / f"interim/rain/rain_{y}.csv", index=False)
     pop = [{"locality_id": lid, "year": y, "population": 1000} for lid in "ABC" for y in range(2015, 2021)]
     pd.DataFrame(pop).to_csv(tmp_path / "interim/population.csv", index=False)
 

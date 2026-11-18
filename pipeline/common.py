@@ -34,9 +34,10 @@ def downloads(cfg, subfolder):
     return folder
 
 
-def download(url, dest, tries=4, timeout=300):
+def download(url, dest, tries=6, timeout=(30, 300)):
     """
-    Download a file to dest, retrying a few times if the server is busy.
+    Download a file to dest, retrying with longer and longer waits if the server
+    is busy (the timeout is 30 s to connect and 300 s to read).
     Returns dest, or None if the file does not exist on the server (404).
     """
     dest = Path(dest)
@@ -55,8 +56,9 @@ def download(url, dest, tries=4, timeout=300):
         except requests.RequestException as e:
             if attempt == tries:
                 raise
-            print(f"   download failed ({e}); retrying in {10 * attempt} s")
-            time.sleep(10 * attempt)
+            wait = 30 * attempt
+            print(f"   download failed ({type(e).__name__}); retrying in {wait} s")
+            time.sleep(wait)
 
 
 def country_codes(cfg):

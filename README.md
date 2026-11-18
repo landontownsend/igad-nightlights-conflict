@@ -31,9 +31,9 @@ WorldPop population ────────────────────
 | Stage | Script | Output in `data/interim/` |
 |---|---|---|
 | Boundaries | `pipeline/boundaries.py` | `localities.gpkg`, `localities.csv`, `neighbors.csv` |
-| Night lights | `pipeline/lights.py` | `lights/lights_<year>.csv` (one file per year, 2012 to 2025) |
+| Night lights | `pipeline/lights.py` | `lights/lights_<year>_<month>.csv` (one file per month, 2012 to 2025) |
 | Conflict | `pipeline/conflict.py` | `conflict_events.csv`, `conflict_sources.json` |
-| Rainfall | `pipeline/rain.py` | `rain_monthly.csv` |
+| Rainfall | `pipeline/rain.py` | `rain/rain_<year>.csv` (1991 to 2025) |
 | Population | `pipeline/population.py` | `population.csv` |
 | Build | `pipeline/build.py` | `data/processed/igad_locality_month.csv` (and `.parquet`, `summary.json`) |
 
@@ -41,7 +41,7 @@ All settings, including every variable definition, are in `config.yaml`.
 
 ### Running it
 
-The data sources are large (the night-light tiles alone are tens of gigabytes), so the dataset is built by the **Build dataset** workflow on GitHub Actions: Actions tab, *Build dataset*, *Run workflow*. Each year of night lights runs as a separate job, and each stage commits its result back to the branch, so a rerun only redoes what is missing.
+The data sources are large (the night-light tiles alone are tens of gigabytes), so the dataset is built by the **Build dataset** workflow on GitHub Actions: Actions tab, *Build dataset*, *Run workflow*. Each year of night lights runs as a separate job, and every stage saves its progress (night lights by month, rainfall by year) and commits it back to the branch, even when a job fails, so a rerun only redoes what is missing.
 
 The workflow needs a free [NASA Earthdata](https://urs.earthdata.nasa.gov) token saved as the repository secret `NASA_EARTHDATA_TOKEN`.
 

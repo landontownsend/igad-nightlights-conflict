@@ -18,7 +18,8 @@ across tiles when a locality crosses a tile edge:
 
 Needs a NASA Earthdata token in the BLACKMARBLE_TOKEN environment variable.
 
-Writes: data/interim/lights/lights_<year>.csv
+Writes one file per month, so a failed run keeps the months it finished:
+  data/interim/lights/lights_<year>_<month>.csv
 """
 
 import argparse
@@ -137,9 +138,11 @@ def process_month(cfg, localities, outline, month_start, token):
 
 
 def run(cfg, year, force=False):
-    out = interim(cfg, f"lights/lights_{year}.csv")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists() and not force:
+    folder_out = interim(cfg, "lights")
+    folder_out.mkdir(parents=True, exist_ok=True)
+    todo = [m for m in range(1, 13)
+            if force or not (folder_out / f"lights_{year}_{m:02d}.csv").exists()]
+    if not todo:
         print(f"lights {year}: already built, skipping (use --force to rebuild)")
         return
     token = os.environ.get("BLACKMARBLE_TOKEN")
@@ -149,15 +152,16 @@ def run(cfg, year, force=False):
     localities = gpd.read_file(interim(cfg, "localities.gpkg"))
     # A simplified outline of all study countries, used only to choose which tiles to download
     outline = gpd.GeoDataFrame(geometry=[localities.union_all().simplify(0.05)], crs="EPSG:4326")
-    months = [process_month(cfg, localities, outline, datetime.date(year, m, 1), token)
-              for m in range(1, 13)]
-    months = [m for m in months if not m.empty]
-    if not months:
-        raise RuntimeError(f"No Black Marble data could be processed for {year}")
-    result = pd.concat(months, ignore_index=True)
     columns = ["locality_id", "year", "month", "ntl_sum", "valid_px", "land_px", "num_sum"]
-    result[columns].to_csv(out, index=False)
-    print(f"lights {year}: {len(result)} locality-months")
+    saved = 0
+    for m in todo:
+        month = process_month(cfg, localities, outline, datetime.date(year, m, 1), token)
+        if not month.empty:
+            month[columns].to_csv(folder_out / f"lights_{year}_{m:02d}.csv", index=False)
+            saved += 1
+    print(f"lights {year}: {saved} of {len(todo)} months saved")
+    if saved == 0:
+        raise RuntimeError(f"No Black Marble data could be processed for {year}")
 
 
 if __name__ == "__main__":
