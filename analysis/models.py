@@ -15,8 +15,8 @@ Design (all decided in the proposal):
 - Train on 2015 to 2021 and test on 2022 to 2025. A training row counts only if its
   whole window ends by December 2021, so no outcome from the test years leaks in.
 - Sudan holdout: train on the other six countries (2015 to 2021), test on Sudan (2022 to 2025).
-- Three versions of each model: baseline (past violence + controls), baseline + lights,
-  and lights + controls (no violence).
+- Versions of each model: night lights alone (the main question), lights plus the usual
+  light level, lights plus controls, and, for comparison, past violence with and without lights.
 
 Run from the repository root:  python -m analysis.models
 """
@@ -42,9 +42,11 @@ VIOLENCE = ["months_since_violence", "log_nearby_deaths_3m", "log_national_death
 CONTROLS = ["log_population", "log_prewar_light", "clear_nights"]
 LIGHTS = ["light_change_3m", "light_change_6m", "sudden_drop", "months_declining"]
 VERSIONS = {
-    "baseline": VIOLENCE + CONTROLS,
+    "lights_only": LIGHTS,                              # the four light-change predictors alone
+    "lights_plus_level": LIGHTS + ["log_prewar_light"], # plus how bright the place usually is
+    "lights_plus_controls": LIGHTS + CONTROLS,
+    "baseline": VIOLENCE + CONTROLS,                    # past violence, for comparison
     "baseline_plus_lights": VIOLENCE + CONTROLS + LIGHTS,
-    "lights_only": LIGHTS + CONTROLS,
 }
 TRAIN_END, TEST_START = 2021, 2022
 
