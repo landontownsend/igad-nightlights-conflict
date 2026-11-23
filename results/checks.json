@@ -1,0 +1,83 @@
+{
+  "rate_by_light_change_decile": [
+    {
+      "decile": 0,
+      "median_change": -1.2435,
+      "rate": 0.0065
+    },
+    {
+      "decile": 1,
+      "median_change": -0.38,
+      "rate": 0.0031
+    },
+    {
+      "decile": 2,
+      "median_change": -0.105,
+      "rate": 0.0043
+    },
+    {
+      "decile": 3,
+      "median_change": 0.0,
+      "rate": 0.0037
+    },
+    {
+      "decile": 4,
+      "median_change": 0.128,
+      "rate": 0.004
+    },
+    {
+      "decile": 5,
+      "median_change": 0.257,
+      "rate": 0.0031
+    },
+    {
+      "decile": 6,
+      "median_change": 0.404,
+      "rate": 0.0023
+    },
+    {
+      "decile": 7,
+      "median_change": 0.6,
+      "rate": 0.0016
+    },
+    {
+      "decile": 8,
+      "median_change": 0.9145,
+      "rate": 0.0038
+    },
+    {
+      "decile": 9,
+      "median_change": 1.708,
+      "rate": 0.0067
+    }
+  ],
+  "rate_by_sudden_drop": {
+    "0.0": 0.0036,
+    "1.0": 0.0069
+  },
+  "logistic_violence_only": {
+    "pr_auc": 0.0282,
+    "roc_auc": 0.85
+  },
+  "logistic_controls_only": {
+    "pr_auc": 0.0148,
+    "roc_auc": 0.603
+  },
+  "gbm_300_trees_baseline": {
+    "pr_auc": 0.0201,
+    "roc_auc": 0.836
+  },
+  "gbm_300_trees_baseline_plus_lights": {
+    "pr_auc": 0.0215,
+    "roc_auc": 0.841
+  },
+  "lit_localities_logistic_baseline": {
+    "pr_auc": 0.0172,
+    "roc_auc": 0.775
+  },
+  "lit_localities_logistic_baseline_plus_lights": {
+    "pr_auc": 0.0169,
+    "roc_auc": 0.78
+  },
+  "distinct_outbreaks_in_test_years": 69
+}
